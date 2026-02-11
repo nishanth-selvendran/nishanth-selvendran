@@ -4,9 +4,40 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebas
 import { collection, query, orderBy, getDocs, Timestamp } from 'firebase/firestore';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
-  LineChart, Line, CartesianGrid 
+  LineChart, Line, CartesianGrid, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { Lock, LogOut, MapPin, Users, Calendar } from 'lucide-react';
+import { Lock, LogOut, MapPin, Users, Calendar, Globe, Monitor, Smartphone } from 'lucide-react';
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+
+// Simple UA Parser Helpers
+const parseBrowser = (ua) => {
+  if (!ua) return 'Unknown';
+  if (ua.includes('Firefox')) return 'Firefox';
+  if (ua.includes('SamsungBrowser')) return 'Samsung Internet';
+  if (ua.includes('Opera') || ua.includes('OPR')) return 'Opera';
+  if (ua.includes('Trident')) return 'Internet Explorer';
+  if (ua.includes('Edge')) return 'Edge';
+  if (ua.includes('Chrome')) return 'Chrome';
+  if (ua.includes('Safari')) return 'Safari';
+  return 'Other';
+};
+
+const parseOS = (ua) => {
+  if (!ua) return 'Unknown';
+  if (ua.includes('Android')) return 'Android';
+  if (ua.includes('iPhone') || ua.includes('iPad')) return 'iOS';
+  if (ua.includes('Windows')) return 'Windows';
+  if (ua.includes('Macintosh')) return 'macOS';
+  if (ua.includes('Linux')) return 'Linux';
+  return 'Other';
+};
+
+const parseDeviceType = (ua) => {
+  if (!ua) return 'Desktop';
+  if (ua.includes('Mobi') || ua.includes('Android') || ua.includes('iPhone')) return 'Mobile';
+  return 'Desktop';
+};
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
@@ -33,12 +64,18 @@ export default function Dashboard() {
     try {
       const q = query(collection(db, 'visits'), orderBy('timestamp', 'desc'));
       const querySnapshot = await getDocs(q);
-      const data = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        // Convert Firestore timestamp to JS Date if exists
-        timestamp: doc.data().timestamp ? doc.data().timestamp.toDate() : new Date()
-      }));
+      const data = querySnapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          ...d,
+          // Convert Firestore timestamp to JS Date if exists
+          timestamp: d.timestamp ? d.timestamp.toDate() : new Date(),
+          browser: parseBrowser(d.userAgent),
+          os: parseOS(d.userAgent),
+          deviceType: parseDeviceType(d.userAgent)
+        };
+      });
       setVisits(data);
     } catch (err) {
       console.error("Error fetching visits:", err);
@@ -84,6 +121,16 @@ export default function Dashboard() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5); // Top 5
 
+  // Group by Browser
+  const browserStats = visits.reduce((acc, curr) => {
+    const b = curr.browser || 'Unknown';
+    acc[b] = (acc[b] || 0) + 1;
+    return acc;
+  }, {});
+  const browserData = Object.entries(browserStats)
+  .map(([name, value]) => ({ name, value }))
+  .sort((a, b) => b.value - a.value);
+
   // Group by Date (Last 7 days)
   const dateStats = {};
   for(let i=6; i>=0; i--) {
@@ -100,7 +147,50 @@ export default function Dashboard() {
     }
   });
 
+  // Group by Referrer (Source)
+  const sourceStats = visits.reduce((acc, curr) => {
+    let source = curr.referrer || 'Direct';
+    if (source.includes('google')) source = 'Google';
+    else if (source.includes('linkedin')) source = 'LinkedIn';
+    else if (source.includes('instagram')) source = 'Instagram';
+    else if (source === 'Direct/None' || source === '') source = 'Direct';
+    else {
+      try {
+        source = new URL(source).hostname.replace('www.', '');
+      } catch (e) {
+        source = 'Other';
+      }
+    }
+
+    acc[source] = (acc[source] || 0) + 1;
+    return acc;
+  }, {});
+  const sourceData = Object.entries(sourceStats)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
   const chartData = Object.entries(dateStats).map(([date, count]) => ({ date, count }));
+
+  // Group by Month
+  const monthStats = visits.reduce((acc, curr) => {
+    const d = curr.timestamp;
+    const key = d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const monthData = Object.entries(monthStats)
+    .map(([name, value]) => ({ name, value }));
+
+  // Group by Year
+  const yearStats = visits.reduce((acc, curr) => {
+    const key = curr.timestamp.getFullYear().toString();
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const yearData = Object.entries(yearStats)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
 
   if (loading) return <div className="flex justify-center items-center h-screen">Loading...</div>;
 
@@ -151,6 +241,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-slate-900">Portfolio Analytics</h1>
           <button 
@@ -202,7 +293,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Charts Section */}
+        {/* Charts Section 1: Weekly & Top Cities */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <h2 className="text-lg font-bold text-slate-900 mb-6">Visits (Last 7 Days)</h2>
@@ -235,35 +326,141 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Visits Table */}
+        {/* Charts Section 2: Monthly & Yearly */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 className="text-lg font-bold text-slate-900 mb-6">Monthly Visits</h2>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 className="text-lg font-bold text-slate-900 mb-6">Yearly Visits</h2>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={yearData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Charts Section 3: Source & Device */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 className="text-lg font-bold text-slate-900 mb-6">Traffic Source</h2>
+            <div className="h-64 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={sourceData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    fill="#82ca9d"
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {sourceData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 className="text-lg font-bold text-slate-900 mb-6">Browser/Device Stats</h2>
+            <div className="h-64 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={browserData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {browserData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed Visits Table */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200">
-            <h2 className="text-lg font-bold text-slate-900">Recent Visits</h2>
+            <h2 className="text-lg font-bold text-slate-900">Recent Visits Logs</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                 <tr>
-                  <th className="px-6 py-3">Time</th>
-                  <th className="px-6 py-3">City</th>
-                  <th className="px-6 py-3">Country</th>
-                  <th className="px-6 py-3">Device</th>
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Loc</th>
+                  <th className="px-4 py-3">GPS?</th>
+                  <th className="px-4 py-3">Page</th>
+                  <th className="px-4 py-3">Device/OS</th>
+                  <th className="px-4 py-3">Browser</th>
+                  <th className="px-4 py-3">Screen</th>
+                  <th className="px-4 py-3">IP</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {visits.slice(0, 10).map((visit) => (
-                  <tr key={visit.id} className="hover:bg-slate-50">
-                    <td className="px-6 py-4 text-sm text-slate-600">
+                {visits.slice(0, 15).map((visit) => (
+                  <tr key={visit.id} className="hover:bg-slate-50 text-sm">
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                       {visit.timestamp.toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 text-sm font-medium text-slate-900">
-                      {visit.city}
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {visit.city}, {visit.country}
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {visit.country}
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${visit.gpsAllowed ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {visit.gpsAllowed ? 'YES' : 'NO'}
+                      </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-500 truncate max-w-xs" title={visit.userAgent}>
-                      {visit.userAgent}
+                    <td className="px-4 py-3 text-blue-600">
+                      {visit.path || '/'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                       {visit.os} ({visit.deviceType})
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {visit.browser}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      {visit.screenSize || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-xs font-mono text-slate-500">
+                      {visit.ip}
                     </td>
                   </tr>
                 ))}
