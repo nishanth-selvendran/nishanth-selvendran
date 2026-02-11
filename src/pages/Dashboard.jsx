@@ -529,6 +529,7 @@ export default function Dashboard() {
                   <th className="px-4 py-3">Time</th>
                   <th className="px-4 py-3">Loc</th>
                   <th className="px-4 py-3">GPS?</th>
+                  <th className="px-4 py-3">Duration</th>
                   <th className="px-4 py-3">Page</th>
                   <th className="px-4 py-3">Device/OS</th>
                   <th className="px-4 py-3">Browser</th>
@@ -549,6 +550,9 @@ export default function Dashboard() {
                       <span className={`px-2 py-1 rounded text-xs font-bold ${visit.gpsAllowed ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                         {visit.gpsAllowed ? 'YES' : 'NO'}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 font-medium">
+                      {formatDuration(visit.duration || 0)}
                     </td>
                     <td className="px-4 py-3 text-blue-600">
                       {visit.path || '/'}
