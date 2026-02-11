@@ -15,6 +15,7 @@ import {
   Zap,
   X,
 } from "lucide-react";
+import ServiceModal from "../components/ServiceModal";
 
 export default function Home() {
   useAnalytics();
@@ -120,6 +121,8 @@ export default function Home() {
           className="absolute top-1/2 right-0 w-80 h-80 bg-pink-200 rounded-full blur-3xl"
         />
       </div>
+
+      <ServiceModal />
 
       <div className="relative z-10 max-w-6xl mx-auto">
         {/* Header */}

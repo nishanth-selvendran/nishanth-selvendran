@@ -93,12 +93,14 @@ const useAnalytics = () => {
 
       // 3. Log to Firestore
       try {
-        await addDoc(collection(db, 'visits'), {
+        const docRef = await addDoc(collection(db, 'visits'), {
           timestamp: serverTimestamp(),
+          duration: 0, // Start with 0
           ...visitData
         });
         
         sessionStorage.setItem(visitedKey, 'true');
+        sessionStorage.setItem('currentVisitId', docRef.id);
         console.log("Analytics: Visit logged successfully via " + visitData.method);
       } catch (error) {
         console.error("Analytics: Error logging visit.", error);
@@ -106,6 +108,30 @@ const useAnalytics = () => {
     };
 
     logVisit();
+  }, []);
+
+  // Heartbeat for Session Duration
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const visitId = sessionStorage.getItem('currentVisitId');
+      if (visitId) {
+         try {
+           // Import these if mistakenly missed in main file, but here we assume scope availability or use full path if needed.
+           // However, better to use the refs from top.
+           // We need to move doc/updateDoc imports to top of file first.
+           const { doc, updateDoc, increment, serverTimestamp } = await import('firebase/firestore');
+           const visitRef = doc(db, 'visits', visitId);
+           await updateDoc(visitRef, {
+             duration: increment(60),
+             lastPing: serverTimestamp()
+           });
+         } catch (err) {
+           console.error("Heartbeat failed", err);
+         }
+      }
+    }, 60000); // Every 1 minute
+
+    return () => clearInterval(interval);
   }, []);
 };
 

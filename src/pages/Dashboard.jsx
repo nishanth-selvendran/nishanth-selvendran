@@ -44,6 +44,7 @@ export default function Dashboard() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [visits, setVisits] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -51,7 +52,7 @@ export default function Dashboard() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        fetchVisits();
+        fetchData();
       } else {
         setLoading(false);
       }
@@ -59,26 +60,37 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, []);
 
-  const fetchVisits = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, 'visits'), orderBy('timestamp', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const data = querySnapshot.docs.map(doc => {
+      // Fetch Visits
+      const qVisits = query(collection(db, 'visits'), orderBy('timestamp', 'desc'));
+      const visitsSnapshot = await getDocs(qVisits);
+      const visitsData = visitsSnapshot.docs.map(doc => {
         const d = doc.data();
         return {
           id: doc.id,
           ...d,
-          // Convert Firestore timestamp to JS Date if exists
           timestamp: d.timestamp ? d.timestamp.toDate() : new Date(),
           browser: parseBrowser(d.userAgent),
           os: parseOS(d.userAgent),
           deviceType: parseDeviceType(d.userAgent)
         };
       });
-      setVisits(data);
+      setVisits(visitsData);
+
+      // Fetch Leads
+      const qLeads = query(collection(db, 'leads'), orderBy('timestamp', 'desc'));
+      const leadsSnapshot = await getDocs(qLeads);
+      const leadsData = leadsSnapshot.docs.map(doc => ({
+         id: doc.id,
+         ...doc.data(),
+         timestamp: doc.data().timestamp ? doc.data().timestamp.toDate() : new Date()
+      }));
+      setLeads(leadsData);
+
     } catch (err) {
-      console.error("Error fetching visits:", err);
+      console.error("Error fetching data:", err);
     } finally {
       setLoading(false);
     }
@@ -101,6 +113,17 @@ export default function Dashboard() {
   // Analytics Processing
   const totalVisits = visits.length;
   
+  // Calculate Average Duration
+  const totalDuration = visits.reduce((acc, curr) => acc + (curr.duration || 0), 0);
+  const avgDuration = totalVisits ? Math.round(totalDuration / totalVisits) : 0;
+  
+  // Format seconds to mm:ss
+  const formatDuration = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}m ${s}s`;
+  };
+
   // Today's visits
   const today = new Date();
   const todayVisits = visits.filter(v => {
@@ -117,6 +140,17 @@ export default function Dashboard() {
     return acc;
   }, {});
   const cityData = Object.entries(cityStats)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5); // Top 5
+
+  // Group by Country
+  const countryStats = visits.reduce((acc, curr) => {
+    const country = curr.country || 'Unknown';
+    acc[country] = (acc[country] || 0) + 1;
+    return acc;
+  }, {});
+  const countryData = Object.entries(countryStats)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5); // Top 5
@@ -253,7 +287,7 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <div className="flex justify-between items-start">
               <div>
@@ -281,6 +315,18 @@ export default function Dashboard() {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <div className="flex justify-between items-start">
               <div>
+                <p className="text-sm font-medium text-slate-500">Avg Session</p>
+                <p className="text-3xl font-bold text-slate-900 mt-2">{formatDuration(avgDuration)}</p>
+              </div>
+              <div className="p-2 bg-orange-50 rounded-lg">
+                <Monitor className="w-6 h-6 text-orange-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div className="flex justify-between items-start">
+              <div>
                 <p className="text-sm font-medium text-slate-500">Top Location</p>
                 <p className="text-3xl font-bold text-slate-900 mt-2">
                   {cityData[0] ? cityData[0].name : '-'}
@@ -293,23 +339,65 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Charts Section 1: Weekly & Top Cities */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="text-lg font-bold text-slate-900 mb-6">Visits (Last 7 Days)</h2>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="count" stroke="#2563eb" strokeWidth={3} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+        {/* Leads Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-8">
+          <div className="px-6 py-4 border-b border-slate-200 bg-green-50">
+            <h2 className="text-lg font-bold text-green-900 flex items-center gap-2">
+              <LogOut className="w-5 h-5" /> Recent Leads & Drafts
+            </h2>
           </div>
+          <div className="overflow-x-auto">
+             {leads.length === 0 ? (
+                <p className="p-6 text-slate-500 text-center">No leads captured yet.</p>
+             ) : (
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                    <tr>
+                      <th className="px-4 py-3">Time</th>
+                      <th className="px-4 py-3">Message</th>
+                      <th className="px-4 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {leads.slice(0, 5).map((lead) => (
+                      <tr key={lead.id} className="hover:bg-slate-50 text-sm">
+                         <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                           {lead.timestamp.toLocaleString()}
+                         </td>
+                         <td className="px-4 py-3 text-slate-900 font-medium">
+                           {lead.message}
+                         </td>
+                         <td className="px-4 py-3">
+                           <span className={`px-2 py-1 rounded text-xs font-bold ${lead.message.includes('[SENT]') ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                             {lead.message.includes('[SENT]') ? 'SENT' : 'DRAFT'}
+                           </span>
+                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+             )}
+          </div>
+        </div>
 
+        {/* Main Trend Chart */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+          <h2 className="text-lg font-bold text-slate-900 mb-6">Visits (Last 7 Days)</h2>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Line type="monotone" dataKey="count" stroke="#2563eb" strokeWidth={3} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Geographic Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <h2 className="text-lg font-bold text-slate-900 mb-6">Top Cities</h2>
             <div className="h-64">
@@ -320,6 +408,21 @@ export default function Dashboard() {
                   <YAxis dataKey="name" type="category" width={100} />
                   <Tooltip />
                   <Bar dataKey="count" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 className="text-lg font-bold text-slate-900 mb-6">Top Countries</h2>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={countryData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} />
+                  <YAxis dataKey="name" type="category" width={100} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#ec4899" radius={[0, 4, 4, 0]} barSize={20} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
