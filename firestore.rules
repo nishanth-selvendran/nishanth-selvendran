@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Visits: Allow create (public), read (admin only)
+    match /visits/{visitId} {
+      allow create: if true;
+      allow update: if true; // Needed for duration tracking heartbeat
+      allow read: if request.auth != null;
+    }
+
+    // Leads: Allow create (public), read (admin only)
+    match /leads/{leadId} {
+      allow create: if true;
+      allow read: if request.auth != null;
+    }
+  }
+}

@@ -29,6 +29,7 @@ export default function ServiceModal() {
   }, []);
 
   const handleClose = () => {
+    saveDraft(message);
     setIsOpen(false);
     sessionStorage.setItem('serviceModalClosedAt', Date.now().toString());
   };
