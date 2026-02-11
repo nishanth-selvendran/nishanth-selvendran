@@ -38,6 +38,8 @@ export default function ServiceModal() {
   const saveDraft = async (text) => {
     if (!text.trim()) return;
     
+    console.log("Attempting to save draft:", text);
+    
     try {
       const visitId = sessionStorage.getItem('currentVisitId');
       const leadData = {
@@ -48,12 +50,11 @@ export default function ServiceModal() {
         source: 'ServiceModal'
       };
 
-      // If we already have a draft ID, update (or just add new for simplicity/history)
-      // For this MVP, we'll just add new docs to avoid complex update logic without ID persistence difficulties
-      // But to be cleaner, let's just fire-and-forget "Draft"
-      await addDoc(collection(db, 'leads'), leadData);
+      const docRef = await addDoc(collection(db, 'leads'), leadData);
+      console.log("Draft saved successfully with ID:", docRef.id);
     } catch (error) {
       console.error("Error saving draft:", error);
+      alert("Failed to save draft. Check console for details.");
     }
   };
 
